@@ -4,16 +4,18 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import CoolProp.CoolProp as CP
 from scipy.optimize import minimize_scalar
-from matplotlib import rcParams
-
-# إعدادات الصفحة
-st.set_page_config(page_title="ThermoTwin", page_icon="️", layout="wide")
 
 # ==========================================
-# محرك خصائص الموائع
+# Page Configuration
+# ==========================================
+st.set_page_config(page_title="ThermoTwin", page_icon="⚙️", layout="wide")
+
+# ==========================================
+# 1. Fluid Properties Engines
 # ==========================================
 
 class LibyanCrudeProperties:
+    """Dynamic properties for Libyan Crude Oil (API ~35)"""
     def __init__(self, api_gravity=35):
         self.api = api_gravity
         self.rho_15C = 141.5 * 1000 / (api_gravity + 131.5)
@@ -33,10 +35,11 @@ class LibyanCrudeProperties:
 
 
 class UtilityFluidProperties:
+    """Properties for pure fluids using CoolProp (e.g., Water)"""
     def __init__(self, fluid_name="Water"):
         self.fluid = fluid_name
     
-    def get_properties(self, T_c, P_pa=1000000):
+    def get_properties(self, T_c, P_pa=1000000): # 10 bar to keep water liquid at 150C
         T_k = T_c + 273.15
         try:
             rho = CP.PropsSI('D', 'T', T_k, 'P', P_pa, self.fluid)
@@ -47,6 +50,10 @@ class UtilityFluidProperties:
         except:
             return 850, 2200, 0.002, 0.12
 
+
+# ==========================================
+# 2. Advanced Physics Engine
+# ==========================================
 
 class AdvancedHeatExchanger:
     def __init__(self, Area, tube_ID, tube_OD, num_tubes, tube_length, tube_passes=2):
@@ -79,7 +86,7 @@ class AdvancedHeatExchanger:
     def calculate_h_shell_side(self, m_flow, utility_props, T_in, T_out):
         T_bulk = (T_in + T_out) / 2.0
         rho, cp, mu, k = utility_props.get_properties(T_bulk)
-        velocity = 0.5
+        velocity = 0.5 # Representative shell velocity
         Re = (rho * velocity * self.tube_OD) / mu
         Pr = (mu * cp) / k
         Nu = 0.36 * (Re**0.55) * (Pr**(1/3))
@@ -156,16 +163,15 @@ class AdvancedHeatExchanger:
 
 
 # ==========================================
-# واجهة Streamlit
+# 3. Streamlit UI & Sidebar Inputs
 # ==========================================
 
-st.title("️ ThermoTwin: التوأم الرقمي الفيزيائي للمبادلات الحرارية")
+st.title("⚙️ ThermoTwin: التوأم الرقمي الفيزيائي للمبادلات الحرارية")
 st.markdown("""
-نظام محاكاة متقدم يحسب خصائص الموائع ديناميكياً ويستخدم معادلات الانتقال الحراري المعتمدة
-لحساب الأداء الفعلي ومقاومة التلوث وتحسين التكلفة الاقتصادية للصيانة.
+نظام محاكاة متقدم يحسب خصائص الموائع ديناميكياً ويستخدم معادلات الانتقال الحراري المعتمدة 
+لحساب الأداء الفعلي، تتبع التلوث، وتحسين التكلفة الاقتصادية للصيانة.
 """)
 
-# الشريط الجانبي للمدخلات
 st.sidebar.header("⚙️ أبعاد المبادل")
 Area = st.sidebar.number_input("المساحة (m²)", value=150.0, min_value=50.0, max_value=300.0)
 tube_OD = st.sidebar.number_input("القطر الخارجي (mm)", value=19.05, min_value=15.0, max_value=25.0)
@@ -174,7 +180,7 @@ tube_ID = st.sidebar.number_input("القطر الداخلي (mm)", value=16.6, 
 tube_length = st.sidebar.number_input("طول الأنبوب (m)", value=4.88, min_value=3.0, max_value=6.0)
 tube_passes = st.sidebar.selectbox("عدد الممرات", [1, 2, 4, 6], index=1)
 
-st.sidebar.header("🛢️ ظروف التشغيل")
+st.sidebar.header("️ ظروف التشغيل")
 m_h = st.sidebar.slider("تدفق الخام (kg/s)", 10.0, 80.0, 30.0)
 m_c = st.sidebar.slider("تدفق المائع الساخن (kg/s)", 15.0, 100.0, 35.0)
 Th_in = st.sidebar.slider("حرارة الخام الداخلة (°C)", 20.0, 60.0, 30.0)
@@ -185,8 +191,9 @@ Fuel_cost = st.sidebar.number_input("تكلفة الوقود ($/J)", value=3e-9,
 Cleaning_cost = st.sidebar.number_input("تكلفة التنظيف ($)", value=15000.0)
 Downtime_cost = st.sidebar.number_input("تكلفة التوقف ($/يوم)", value=4000.0)
 
+
 # ==========================================
-# المحاكاة
+# 4. Simulation Engine (Cached)
 # ==========================================
 
 @st.cache_data
@@ -248,8 +255,118 @@ def run_simulation(Area, tube_ID, tube_OD, num_tubes, tube_length, tube_passes, 
 
 df = run_simulation(Area, tube_ID, tube_OD, num_tubes, tube_length, tube_passes, m_h, m_c, Th_in, Tc_in)
 
+
 # ==========================================
-# عرض النتائج
+# 5. Display Results & Charts
 # ==========================================
 
-st.markdown("###
+st.markdown("### 📊 المؤشرات اللحظية (بعد 120 يوم)")
+current = df.iloc[-1]
+
+col1, col2, col3, col4 = st.columns(4)
+col1.metric("مقاومة التلوث (Rf)", f"{current['Rf_calc']*1000:.3f} m².K/kW")
+col2.metric("U_actual", f"{current['U_actual']:.1f} W/m².K")
+col3.metric("U_clean", f"{current['U_clean']:.1f} W/m².K")
+col4.metric("Re", f"{current['Re']:.0f}", delta="مضطرب" if current['Re'] > 4000 else "انسيابي")
+
+st.markdown("---")
+st.markdown("### 📈 التحليل الفيزيائي")
+
+tab1, tab2, tab3 = st.tabs(["مقاومة التلوث", "معاملات الانتقال", "الخصائص الفيزيائية"])
+
+with tab1:
+    fig1, ax1 = plt.subplots(figsize=(10, 4))
+    ax1.plot(df['Day'], df['Rf_calc']*1000, label='Rf المحسوب', color='red', linewidth=2)
+    ax1.plot(df['Day'], df['Rf_sim']*1000, label='Rf الفعلي', color='black', linestyle='--', linewidth=2)
+    ax1.set_xlabel('الزمن (أيام)')
+    ax1.set_ylabel('Rf (m².K/kW)')
+    ax1.set_title('تتبع مقاومة التلوث')
+    ax1.legend()
+    ax1.grid(True, alpha=0.3)
+    st.pyplot(fig1)
+
+with tab2:
+    fig2, ax2 = plt.subplots(figsize=(10, 4))
+    ax2.plot(df['Day'], df['U_clean'], label='U_clean (ديناميكي)', color='blue', linewidth=2)
+    ax2.plot(df['Day'], df['U_actual'], label='U_actual (متدهور)', color='orange', linewidth=2)
+    ax2.set_xlabel('الزمن (أيام)')
+    ax2.set_ylabel('U (W/m².K)')
+    ax2.set_title('معامل الانتقال الحراري')
+    ax2.legend()
+    ax2.grid(True, alpha=0.3)
+    st.pyplot(fig2)
+
+with tab3:
+    fig3, ax3 = plt.subplots(figsize=(10, 4))
+    ax3.plot(df['Day'], df['mu']*1000, label='اللزوجة (mPa.s)', color='purple', linewidth=2)
+    ax4 = ax3.twinx()
+    ax4.plot(df['Day'], df['rho'], label='الكثافة (kg/m³)', color='green', linewidth=2, linestyle='--')
+    ax3.set_xlabel('الزمن (أيام)')
+    ax3.set_ylabel('اللزوجة (mPa.s)', color='purple')
+    ax4.set_ylabel('الكثافة (kg/m³)', color='green')
+    ax3.set_title('الخصائص الفيزيائية الديناميكية')
+    ax3.legend(loc='upper left')
+    ax4.legend(loc='upper right')
+    ax3.grid(True, alpha=0.3)
+    st.pyplot(fig3)
+
+
+# ==========================================
+# 6. Economic Optimization
+# ==========================================
+
+st.markdown("---")
+st.markdown("### 💰 التحسين الاقتصادي للصيانة")
+
+class EconomicOptimizer:
+    def __init__(self, Q_design, Fuel_cost, Cleaning_cost, Downtime_cost):
+        self.Q_design = Q_design
+        self.Fuel_cost = Fuel_cost
+        self.C_clean = Cleaning_cost
+        self.C_down = Downtime_cost
+    
+    def total_cost(self, t_days, df_subset):
+        if len(df_subset) < 2: return 1e9
+        avg_Q_lost = max(0, self.Q_design - df_subset['Q'].mean())
+        energy_cost = (avg_Q_lost * self.Fuel_cost / 0.85) * (t_days * 86400)
+        total = energy_cost + self.C_clean + self.C_down
+        return total / t_days
+
+Q_design_val = df[df['Day'] <= 5]['Q'].mean()
+optimizer = EconomicOptimizer(Q_design_val, Fuel_cost, Cleaning_cost, Downtime_cost)
+
+def cost_func(t_days):
+    subset = df[df['Day'] <= t_days]
+    return optimizer.total_cost(t_days, subset)
+
+optimal = minimize_scalar(cost_func, bounds=(5, 120), method='bounded')
+opt_days = optimal.x
+
+col1, col2 = st.columns(2)
+col1.metric("الوقت الأمثل للتنظيف", f"{opt_days:.1f} يوم")
+col2.metric("التكلفة اليومية", f"${optimizer.total_cost(opt_days, df[df['Day']<=opt_days]):.2f}")
+
+fig4, ax4 = plt.subplots(figsize=(10, 4))
+days_range = np.linspace(10, 120, 110)
+costs = [cost_func(d) for d in days_range]
+ax4.plot(days_range, costs, color='black', linewidth=2)
+ax4.axvline(opt_days, color='red', linestyle='--', linewidth=2, label=f'الوقت الأمثل: {opt_days:.1f} يوم')
+ax4.set_xlabel('مدة الدورة (أيام)')
+ax4.set_ylabel('التكلفة اليومية ($/يوم)')
+ax4.set_title('تحسين التكلفة الاقتصادية للصيانة')
+ax4.legend()
+ax4.grid(True, alpha=0.3)
+st.pyplot(fig4)
+
+
+# ==========================================
+# 7. Footer & Call to Action
+# ==========================================
+
+st.markdown("---")
+st.info("""
+💡 **ملاحظة:** هذه الأداة تحسب *متى* يجب التنظيف بناءً على التكلفة. 
+لتحديد *السبب الجذري* للتلوث وتصميم حل هندسي دائم، نحتاج إلى بناء توأم رقمي شامل لوحدتك التشغيلية.
+""")
+
+st.success("📩 **لطلب استشارة متخصصة أو تدريب فريقك: contact@thermotwin-center.ly**")
